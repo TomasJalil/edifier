@@ -90,7 +90,7 @@ function buildItem(input, options) {
     item_id: String(itemId || ''),
     item_name: String(itemName || ''),
     item_brand: options.item_brand || DEFAULT_BRAND,
-    price: cleanPrice(rawPrice),
+    price: cleanPrice(rawPrice) ?? 0,
     quantity,
   };
 

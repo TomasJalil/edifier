@@ -400,21 +400,21 @@ export default {
     dataProduct(newProduct) {
       if (this._viewContentSent) return;
       if (!newProduct || !newProduct.id) return;
-      this._viewContentSent = true;
       const price = newProduct.price || {};
       const value = cleanPrice(price.pvp);
+      if (value === null) return;
+      this._viewContentSent = true;
       trackStandard("ViewContent", {
         content_ids: [String(newProduct.id)],
         content_type: "product",
         content_name: newProduct.keywords || "",
+        content_category: newProduct.category_name || newProduct.category || undefined,
         value
       });
       pushEcommerce("view_item", {
         currency: CURRENCY,
         value,
-        items: [
-          buildItem(newProduct, { quantity: 1 })
-        ]
+        items: [buildItem(newProduct, { quantity: 1 })]
       });
     }
   },
@@ -619,76 +619,58 @@ export default {
 
         if (existingProduct) {
           const newQuantity = existingProduct.original_quantity + this.quantity;
-          
           this.$store.commit("cart/UPDATE_ITEM_QUANTITY", {
-              publication_id: this.dataProduct.id,
-              quantity: newQuantity
+            publication_id: this.dataProduct.id,
+            quantity: newQuantity
           });
-
-          if (this.isAuth) {
-            const request = currentCart.shopping_cart_items.map(prod => {
-              return {
-                publication_id: prod.publication_id,
-                quantity: prod.original_quantity
-              };
-            });
-            await this.$store.dispatch("cart/CREATE_CART", {
-              items: [...request]
-            });
-          }
         } else {
           this.$store.commit("cart/ADD_ITEM", {
             ...this.dataProduct,
             original_quantity: this.quantity
           });
-
-          if (this.isAuth) {
-            const request = currentCart.shopping_cart_items.map(prod => {
-              return {
-                publication_id: prod.publication_id,
-                quantity: prod.original_quantity
-              };
-            });
-
-            const itemFilter = request.filter(value => {
-              if (value.publication_id != undefined) {
-                return value;
-              }
-            });
-
-            await this.$store.dispatch("cart/CREATE_CART", {
-              items: [...itemFilter]
-            });
-
-            await this.$store.dispatch("cart/GET_CURRENT_CART");
-          }
         }
-        
+
         this.$store.commit("cart/TOTAL_AMOUNT", { items: currentCart.shopping_cart_items });
 
+        // Pixel fires immediately after local commit — before any API sync so a
+        // network failure can't silently swallow the event.
         const unitPrice = cleanPrice(this.dataProduct?.price?.pvp);
         const addedQuantity = this.quantity;
-        const totalValue = unitPrice * addedQuantity;
-        trackStandard("AddToCart", {
-          content_ids: [String(this.dataProduct.id)],
-          content_type: "product",
-          content_name: this.dataProduct.keywords || "",
-          contents: [{ id: String(this.dataProduct.id), quantity: addedQuantity }],
-          value: totalValue
-        });
-        pushEcommerce("add_to_cart", {
-          currency: CURRENCY,
-          value: totalValue,
-          items: [
-            buildItem(this.dataProduct, {
-              quantity: addedQuantity,
-              price: unitPrice
-            })
-          ]
-        });
+        if (unitPrice !== null) {
+          const totalValue = unitPrice * addedQuantity;
+          trackStandard("AddToCart", {
+            content_ids: [String(this.dataProduct.id)],
+            content_type: "product",
+            content_name: this.dataProduct.keywords || "",
+            contents: [{ id: String(this.dataProduct.id), quantity: addedQuantity, item_price: unitPrice }],
+            value: totalValue
+          });
+          pushEcommerce("add_to_cart", {
+            currency: CURRENCY,
+            value: totalValue,
+            items: [buildItem(this.dataProduct, { quantity: addedQuantity, price: unitPrice })]
+          });
+        }
 
         this.messageProductAdd = true;
         this.snackbar = true;
+
+        // Server sync — runs after UX feedback and tracking.
+        if (this.isAuth) {
+          if (existingProduct) {
+            const request = currentCart.shopping_cart_items.map(prod => ({
+              publication_id: prod.publication_id,
+              quantity: prod.original_quantity
+            }));
+            await this.$store.dispatch("cart/CREATE_CART", { items: [...request] });
+          } else {
+            const request = currentCart.shopping_cart_items
+              .map(prod => ({ publication_id: prod.publication_id, quantity: prod.original_quantity }))
+              .filter(p => p.publication_id != null);
+            await this.$store.dispatch("cart/CREATE_CART", { items: [...request] });
+            await this.$store.dispatch("cart/GET_CURRENT_CART");
+          }
+        }
       } catch (error) {
         console.log(error);
         const errorMessage = error?.response?.data?.errors[0]?.message;

@@ -136,6 +136,13 @@ export default {
           if (meta.num_items != null) {
             payload.num_items = meta.num_items;
           }
+          if (Array.isArray(meta.items) && meta.items.length) {
+            payload.contents = meta.items.map(it => ({
+              id: String(it.item_id || ''),
+              quantity: Number(it.quantity) || 0,
+              item_price: Number(it.price) || 0
+            }));
+          }
 
           trackStandard("Purchase", payload, { eventID });
 
@@ -163,7 +170,8 @@ export default {
             value,
             currency: CURRENCY,
             payment_type: paymentType,
-            items: Array.isArray(meta.items) ? meta.items : []
+            items: Array.isArray(meta.items) ? meta.items : [],
+            ...(meta.num_items != null ? { num_items: meta.num_items } : {})
           });
 
           try {

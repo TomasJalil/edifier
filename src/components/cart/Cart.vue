@@ -1377,24 +1377,27 @@ export default {
           .map(String);
         const contents = items.map(it => ({
           id: String(it.publication_id || it.publication?.id || ""),
-          quantity: it.original_quantity || 0
+          quantity: it.original_quantity || 0,
+          item_price: cleanPrice(it.publication?.price?.pvp) ?? 0
         }));
         const checkoutValue = cleanPrice(
           (this.totalPrice(items) || this.totalAmount) +
             (this.radioGroup === 1 ? this.quote : 0)
         );
-        trackStandard("InitiateCheckout", {
-          value: checkoutValue,
-          num_items: numItems,
-          content_ids: contentIds,
-          content_type: "product",
-          contents
-        });
-        pushEcommerce("begin_checkout", {
-          currency: CURRENCY,
-          value: checkoutValue,
-          items: buildItems(items)
-        });
+        if (checkoutValue !== null) {
+          trackStandard("InitiateCheckout", {
+            value: checkoutValue,
+            num_items: numItems,
+            content_ids: contentIds,
+            content_type: "product",
+            contents
+          });
+          pushEcommerce("begin_checkout", {
+            currency: CURRENCY,
+            value: checkoutValue,
+            items: buildItems(items)
+          });
+        }
 
         const { notificationUrl, autoReturn, backUrls } =
           buildMercadoPagoReturnConfig();
@@ -1799,11 +1802,13 @@ export default {
 
     HandlerTrackCartView() {
       const items = this.productCartState?.shopping_cart_items || [];
+      if (!items.length) return;
       const numItems = items.reduce(
         (acc, it) => acc + (it.original_quantity || 0),
         0
       );
       const value = cleanPrice(this.totalPriceOnePayment(items));
+      if (value === null) return;
       const contentIds = items
         .map(it => it.publication_id || it.publication?.id)
         .filter(Boolean)

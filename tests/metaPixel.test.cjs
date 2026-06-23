@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 
 const nodeCrypto = require('node:crypto');
 
-const { cleanPrice, trackStandard, trackCustom, initWithEmail, sha256Hex } = require(
+const { cleanPrice, filterPayload, trackStandard, trackCustom, initWithEmail, sha256Hex } = require(
   '../src/utils/metaPixel'
 );
 
@@ -15,8 +15,10 @@ function expectedSha256(text) {
 
 test('cleanPrice: argentine formatted strings', () => {
   assert.equal(cleanPrice('$178.490'), 178490);
+  assert.equal(cleanPrice('$ 178.490'), 178490);    // space after symbol
   assert.equal(cleanPrice('$ 522.390,00'), 522390);
   assert.equal(cleanPrice('587.970'), 587970);
+  assert.equal(cleanPrice('178490'), 178490);        // plain unformatted string
   assert.equal(cleanPrice('$1.000.000,50'), 1000001);
   assert.equal(cleanPrice('$ 123.456.789'), 123456789);
 });
@@ -25,23 +27,39 @@ test('cleanPrice: raw numbers pass through rounded', () => {
   assert.equal(cleanPrice(178490), 178490);
   assert.equal(cleanPrice(178490.4), 178490);
   assert.equal(cleanPrice(178490.6), 178491);
-  assert.equal(cleanPrice(0), 0);
 });
 
-test('cleanPrice: empty / nullish inputs return 0', () => {
-  assert.equal(cleanPrice(''), 0);
-  assert.equal(cleanPrice(null), 0);
-  assert.equal(cleanPrice(undefined), 0);
-  assert.equal(cleanPrice('   '), 0);
-  assert.equal(cleanPrice('$0'), 0);
+test('cleanPrice: zero and nullish inputs return null', () => {
+  assert.equal(cleanPrice(0), null);
+  assert.equal(cleanPrice(''), null);
+  assert.equal(cleanPrice(null), null);
+  assert.equal(cleanPrice(undefined), null);
+  assert.equal(cleanPrice('   '), null);
+  assert.equal(cleanPrice('$0'), null);
+  assert.equal(cleanPrice('0'), null);
 });
 
-test('cleanPrice: invalid / garbage inputs return 0', () => {
-  assert.equal(cleanPrice('abc'), 0);
-  assert.equal(cleanPrice(NaN), 0);
-  assert.equal(cleanPrice(Infinity), 0);
-  assert.equal(cleanPrice(-Infinity), 0);
-  assert.equal(cleanPrice({}), 0);
+test('cleanPrice: invalid / garbage inputs return null', () => {
+  assert.equal(cleanPrice('abc'), null);
+  assert.equal(cleanPrice(NaN), null);
+  assert.equal(cleanPrice(Infinity), null);
+  assert.equal(cleanPrice(-Infinity), null);
+  assert.equal(cleanPrice({}), null);
+});
+
+test('cleanPrice: warns when parsing a string', () => {
+  const warns = [];
+  const orig = console.warn;
+  console.warn = (...args) => warns.push(args.join(' '));
+  try {
+    cleanPrice('$178.490');
+    cleanPrice('522390');
+    cleanPrice('abc');
+    assert.ok(warns.length === 3, 'expected 3 warnings for 3 string inputs');
+    assert.ok(warns[0].includes('[metaPixel]'));
+  } finally {
+    console.warn = orig;
+  }
 });
 
 test('cleanPrice: negative values', () => {
@@ -119,6 +137,22 @@ test('trackStandard: overriding currency is respected', () => {
   });
 });
 
+test('trackStandard: strips undefined, null, and NaN from payload', () => {
+  withFakeFbq(null, calls => {
+    trackStandard('AddToCart', { value: 178490, content_name: undefined, bad: NaN, empty: null });
+    const payload = calls[0][2];
+    assert.equal(payload.value, 178490);
+    assert.ok(!('content_name' in payload), 'undefined field should be stripped');
+    assert.ok(!('bad' in payload), 'NaN field should be stripped');
+    assert.ok(!('empty' in payload), 'null field should be stripped');
+  });
+});
+
+test('filterPayload: removes undefined, null, NaN; keeps 0 and valid strings', () => {
+  const result = filterPayload({ a: 1, b: undefined, c: null, d: NaN, e: 0, f: 'ok', g: false });
+  assert.deepEqual(result, { a: 1, e: 0, f: 'ok', g: false });
+});
+
 test('trackStandard / trackCustom: silent no-op when fbq absent', () => {
   const originalWindow = global.window;
   global.window = {};
@@ -142,6 +176,25 @@ test('trackCustom: omits payload arg when empty', () => {
   withFakeFbq(null, calls => {
     trackCustom('HomeView');
     assert.deepEqual(calls, [['trackCustom', 'HomeView']]);
+  });
+});
+
+test('trackCustom: strips undefined, null, and NaN from payload', () => {
+  withFakeFbq(null, calls => {
+    trackCustom('CartView', { num_items: 3, bad: undefined, empty: null, notNum: NaN });
+    assert.equal(calls.length, 1);
+    const payload = calls[0][2];
+    assert.equal(payload.num_items, 3);
+    assert.ok(!('bad' in payload), 'undefined field should be stripped');
+    assert.ok(!('empty' in payload), 'null field should be stripped');
+    assert.ok(!('notNum' in payload), 'NaN field should be stripped');
+  });
+});
+
+test('trackCustom: omits payload arg when all fields are stripped', () => {
+  withFakeFbq(null, calls => {
+    trackCustom('SomeEvent', { a: undefined, b: null });
+    assert.deepEqual(calls, [['trackCustom', 'SomeEvent']]);
   });
 });
 

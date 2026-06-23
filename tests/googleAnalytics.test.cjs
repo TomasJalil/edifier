@@ -154,6 +154,16 @@ test('buildItems: returns [] for non-array input', () => {
   assert.deepEqual(buildItems('nope'), []);
 });
 
+test('buildItem: price is 0 when cleanPrice returns null (zero or invalid source)', () => {
+  const { buildItem } = loadFresh();
+  // price: 0 in source → cleanPrice returns null → item price falls back to 0
+  const item = buildItem({ id: 5, name: 'Test', price: { pvp: 0 } });
+  assert.equal(item.price, 0);
+  // price: undefined → same fallback
+  const item2 = buildItem({ id: 6, name: 'Test2', price: {} });
+  assert.equal(item2.price, 0);
+});
+
 test('exported constants reflect Edifier configuration', () => {
   const { CURRENCY, DEFAULT_BRAND, GA4_MEASUREMENT_ID, GOOGLE_ADS_CONVERSION_ID } = loadFresh();
   assert.equal(CURRENCY, 'ARS');

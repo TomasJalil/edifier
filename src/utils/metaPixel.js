@@ -5,21 +5,25 @@ const CURRENCY = 'ARS';
 const EDIFIER_STORE_ID = 3;
 
 function cleanPrice(input) {
-  if (input === null || input === undefined || input === '') return 0;
+  if (input === null || input === undefined || input === '') return null;
 
   if (typeof input === 'number') {
-    if (!Number.isFinite(input)) return 0;
-    return Math.round(input);
+    if (!Number.isFinite(input)) return null;
+    const rounded = Math.round(input);
+    return rounded === 0 ? null : rounded;
   }
 
+  // String path: warn because the caller should prefer a raw numeric source.
+  console.warn('[metaPixel] cleanPrice: string input — prefer raw numeric price:', String(input).slice(0, 60));
+
   let s = String(input).trim();
-  if (!s) return 0;
+  if (!s) return null;
   s = s.replace(/[^\d.,-]/g, '');
-  if (!s) return 0;
+  if (!s) return null;
 
   const isNegative = s.startsWith('-');
   if (isNegative) s = s.slice(1);
-  if (!s) return 0;
+  if (!s) return null;
 
   const hasComma = s.indexOf(',') !== -1;
   const hasDot = s.indexOf('.') !== -1;
@@ -42,17 +46,29 @@ function cleanPrice(input) {
   }
 
   const num = parseFloat(normalized);
-  if (!Number.isFinite(num)) return 0;
-  return (isNegative ? -1 : 1) * Math.round(num);
+  if (!Number.isFinite(num)) return null;
+  const rounded = (isNegative ? -1 : 1) * Math.round(num);
+  return rounded === 0 ? null : rounded;
 }
 
 function fbqAvailable() {
   return typeof window !== 'undefined' && typeof window.fbq === 'function';
 }
 
+function filterPayload(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const out = {};
+  for (const key of Object.keys(obj)) {
+    const v = obj[key];
+    if (v === undefined || v === null || (typeof v === 'number' && !Number.isFinite(v))) continue;
+    out[key] = v;
+  }
+  return out;
+}
+
 function trackStandard(eventName, data, options) {
   if (!fbqAvailable()) return;
-  const payload = Object.assign({ currency: CURRENCY }, data || {});
+  const payload = filterPayload(Object.assign({ currency: CURRENCY }, data || {}));
   if (options && options.eventID) {
     window.fbq('track', eventName, payload, { eventID: options.eventID });
   } else {
@@ -62,8 +78,9 @@ function trackStandard(eventName, data, options) {
 
 function trackCustom(eventName, data) {
   if (!fbqAvailable()) return;
-  if (data && Object.keys(data).length) {
-    window.fbq('trackCustom', eventName, data);
+  const payload = data ? filterPayload(data) : null;
+  if (payload && Object.keys(payload).length) {
+    window.fbq('trackCustom', eventName, payload);
   } else {
     window.fbq('trackCustom', eventName);
   }
@@ -106,12 +123,14 @@ module.exports = {
   CURRENCY,
   EDIFIER_STORE_ID,
   cleanPrice,
+  filterPayload,
   trackStandard,
   trackCustom,
   initWithEmail,
   sha256Hex,
 };
 module.exports.cleanPrice = cleanPrice;
+module.exports.filterPayload = filterPayload;
 module.exports.trackStandard = trackStandard;
 module.exports.trackCustom = trackCustom;
 module.exports.initWithEmail = initWithEmail;
