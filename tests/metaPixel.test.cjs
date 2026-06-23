@@ -137,6 +137,13 @@ test('trackStandard: overriding currency is respected', () => {
   });
 });
 
+test('trackStandard: can omit default currency for non-monetary events', () => {
+  withFakeFbq(null, calls => {
+    trackStandard('CompleteRegistration', { status: true }, { includeCurrency: false });
+    assert.deepEqual(calls, [['track', 'CompleteRegistration', { status: true }]]);
+  });
+});
+
 test('trackStandard: strips undefined, null, and NaN from payload', () => {
   withFakeFbq(null, calls => {
     trackStandard('AddToCart', { value: 178490, content_name: undefined, bad: NaN, empty: null });

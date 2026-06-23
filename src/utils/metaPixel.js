@@ -68,7 +68,9 @@ function filterPayload(obj) {
 
 function trackStandard(eventName, data, options) {
   if (!fbqAvailable()) return;
-  const payload = filterPayload(Object.assign({ currency: CURRENCY }, data || {}));
+  const basePayload =
+    options && options.includeCurrency === false ? {} : { currency: CURRENCY };
+  const payload = filterPayload(Object.assign(basePayload, data || {}));
   if (options && options.eventID) {
     window.fbq('track', eventName, payload, { eventID: options.eventID });
   } else {

@@ -302,6 +302,8 @@
 </template>
 
 <script>
+import { trackStandard } from "@/utils/metaPixel";
+
 export default {
   props: {
     shippingData: {
@@ -383,6 +385,14 @@ export default {
           }
           
           this.$snotify.success("Cuenta creada exitosamente", "¡Bienvenido!");
+          trackStandard(
+            "CompleteRegistration",
+            {
+              status: true,
+              content_name: "buyer_account"
+            },
+            { includeCurrency: false }
+          );
           console.log(">>> RegisterCardComponent: Emitiendo register:success");
           this.$emit("register:success"); // Nuevo evento para indicar registro+login exitoso
         } catch (loginError) {

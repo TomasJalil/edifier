@@ -209,6 +209,7 @@
 
 <script>
 import NavegationComponent from "@/components/Utils/navegation_component";
+import { trackStandard } from "@/utils/metaPixel";
 export default {
   components: {
     "navegtion-component": NavegationComponent,
@@ -303,6 +304,14 @@ export default {
           password: this.password,
         };
         await this.$store.dispatch("auth/REGISTER", request);
+        trackStandard(
+          "CompleteRegistration",
+          {
+            status: true,
+            content_name: "buyer_account"
+          },
+          { includeCurrency: false }
+        );
         this.showNotification = true;
         // this.$router.push({ name: "login" });
       } catch (error) {

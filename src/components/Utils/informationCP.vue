@@ -108,6 +108,8 @@
 <script>
 import moment from "moment";
 import { isValidUmbral } from "@/utils/validateUmbral.js";
+import { cleanPrice, trackStandard } from "@/utils/metaPixel";
+import { pushEcommerce, buildItem, CURRENCY } from "@/utils/googleAnalytics";
 
 export default {
   props: {
@@ -211,6 +213,36 @@ export default {
   },
 
   methods: {
+    trackAddToCart(publication, quantity = 1) {
+      const unitPrice = cleanPrice(publication?.price?.pvp);
+      if (unitPrice === null) return;
+
+      const totalValue = unitPrice * quantity;
+      trackStandard("AddToCart", {
+        content_ids: [String(publication.id)],
+        content_type: "product",
+        content_name: publication.keywords || publication.name || "",
+        contents: [
+          {
+            id: String(publication.id),
+            quantity,
+            item_price: unitPrice
+          }
+        ],
+        value: totalValue
+      });
+
+      const gaItem = buildItem(publication, {
+        quantity,
+        price: unitPrice
+      });
+      pushEcommerce("add_to_cart", {
+        currency: CURRENCY,
+        value: totalValue,
+        items: gaItem ? [gaItem] : []
+      });
+    },
+
     HandlerReturnWarehouse(cp, warehouse) {
       switch (parseInt(cp)) {
         case 2000:
@@ -407,6 +439,8 @@ export default {
             original_quantity: 1
           });
         }
+
+        this.trackAddToCart(publication, 1);
 
         const normalizedItems = this.productCartState.shopping_cart_items.map(
           item => ({

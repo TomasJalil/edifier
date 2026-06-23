@@ -689,6 +689,7 @@ import {
 import { cleanPrice, trackStandard, trackCustom } from "../../utils/metaPixel";
 import {
   pushEcommerce,
+  buildItem,
   buildItems,
   CURRENCY
 } from "../../utils/googleAnalytics";
@@ -967,6 +968,98 @@ export default {
   },
 
   methods: {
+    getCheckoutTrackingPaymentType() {
+      if (
+        this.payments_type === "bank_transfer" ||
+        this.radioGroupTransfer === 0
+      ) {
+        return "bank_transfer";
+      }
+      if (
+        this.payments_type === "installments" ||
+        this.radioGroupDues === 0
+      ) {
+        return "installments";
+      }
+      return "card";
+    },
+
+    getCheckoutTrackingUnitPrice(
+      item,
+      paymentType = this.getCheckoutTrackingPaymentType()
+    ) {
+      const price = item?.publication?.price || {};
+
+      if (paymentType === "bank_transfer") {
+        return cleanPrice(price.pvp_transfer ?? price.pvp);
+      }
+
+      if (paymentType === "installments") {
+        return cleanPrice(price.pvp_18_installments ?? price.pvp);
+      }
+
+      return cleanPrice(price.pvp);
+    },
+
+    buildCheckoutTrackingContext(options = {}) {
+      const items =
+        options.items || this.productCartState?.shopping_cart_items || [];
+      const paymentType =
+        options.paymentType || this.getCheckoutTrackingPaymentType();
+      const includeQuote = options.includeQuote !== false;
+      const shippingQuote = includeQuote
+        ? cleanPrice(options.quote ?? this.quote) || 0
+        : 0;
+      const contents = items
+        .map(it => {
+          const gaItem = buildItem(it, {
+            price: this.getCheckoutTrackingUnitPrice(it, paymentType)
+          });
+          if (!gaItem || !gaItem.item_id) return null;
+          return {
+            id: gaItem.item_id,
+            quantity: gaItem.quantity,
+            item_price: gaItem.price || 0
+          };
+        })
+        .filter(Boolean);
+      const numItems = contents.reduce((acc, it) => acc + it.quantity, 0);
+      const contentIds = contents.map(it => it.id);
+      const itemsValue = contents.reduce((acc, it) => {
+        return acc + it.item_price * it.quantity;
+      }, 0);
+
+      return {
+        items,
+        paymentType,
+        numItems,
+        contentIds,
+        contents,
+        value: itemsValue > 0 ? itemsValue + shippingQuote : null
+      };
+    },
+
+    trackPaymentMethodSelection(methodKey) {
+      const paymentType =
+        methodKey === "transfer"
+          ? "bank_transfer"
+          : methodKey === "installments"
+            ? "installments"
+            : "card";
+      const context = this.buildCheckoutTrackingContext({
+        includeQuote: false,
+        paymentType
+      });
+
+      trackCustom("SelectPaymentMethod", {
+        payment_method: paymentType,
+        value: context.value,
+        num_items: context.numItems,
+        content_ids: context.contentIds,
+        content_type: "product"
+      });
+    },
+
     handleEditAddress() {
       if (this.userAddress && this.userAddress.length === 1 && this.userAddress[0].id === 'guest') {
         this.userAddress = [];
@@ -979,6 +1072,7 @@ export default {
     },
 
     goToNextFromCart() {
+      this.HandlerTrackCartView();
       // Siempre ir a Pago, independientemente de si está logueado
       this.e1 = this.paymentStep;
     },
@@ -1317,7 +1411,9 @@ export default {
               order: this.confirmOrder,
               pickup: this.radioGroup == 0 ? true : false,
               address: this.radioGroup == 1 ? this.idAddress.id : "",
-              response: response.data.data
+              response: response.data.data,
+              payment_type: this.payments_type,
+              default_installments: this.default_installments
             };
           } else {
             if (this.radioGroupTransfer === 0) {
@@ -1367,34 +1463,18 @@ export default {
         this.loadingCheckout = true;
 
         const items = this.productCartState?.shopping_cart_items || [];
-        const numItems = items.reduce(
-          (acc, it) => acc + (it.original_quantity || 0),
-          0
-        );
-        const contentIds = items
-          .map(it => it.publication_id || it.publication?.id)
-          .filter(Boolean)
-          .map(String);
-        const contents = items.map(it => ({
-          id: String(it.publication_id || it.publication?.id || ""),
-          quantity: it.original_quantity || 0,
-          item_price: cleanPrice(it.publication?.price?.pvp) ?? 0
-        }));
-        const checkoutValue = cleanPrice(
-          (this.totalPrice(items) || this.totalAmount) +
-            (this.radioGroup === 1 ? this.quote : 0)
-        );
-        if (checkoutValue !== null) {
+        const trackingContext = this.buildCheckoutTrackingContext({ items });
+        if (trackingContext.value !== null) {
           trackStandard("InitiateCheckout", {
-            value: checkoutValue,
-            num_items: numItems,
-            content_ids: contentIds,
+            value: trackingContext.value,
+            num_items: trackingContext.numItems,
+            content_ids: trackingContext.contentIds,
             content_type: "product",
-            contents
+            contents: trackingContext.contents
           });
           pushEcommerce("begin_checkout", {
             currency: CURRENCY,
-            value: checkoutValue,
+            value: trackingContext.value,
             items: buildItems(items)
           });
         }
@@ -1666,6 +1746,8 @@ export default {
       }
 
       if (this.radioGroupTransfer === 0) {
+        this.payments_type = "bank_transfer";
+        this.default_installments = "";
         this.e1 = this.deliveryStep;
         this.totalPrice();
       }
@@ -1699,6 +1781,9 @@ export default {
           this.radioGroupCredit = null;
           this.transfer = false;
           this.radioGroupTransfer = null;
+          this.payments_type = "installments";
+          this.default_installments = 6;
+          this.trackPaymentMethodSelection("installments");
           break;
         case 2:
           this.dues = false;
@@ -1707,6 +1792,9 @@ export default {
           this.radioGroupCredit = 0;
           this.transfer = false;
           this.radioGroupTransfer = null;
+          this.payments_type = "card";
+          this.default_installments = "";
+          this.trackPaymentMethodSelection("card");
           break;
         case 3:
           this.dues = false;
@@ -1715,6 +1803,9 @@ export default {
           this.radioGroupCredit = null;
           this.transfer = true;
           this.radioGroupTransfer = 0;
+          this.payments_type = "bank_transfer";
+          this.default_installments = "";
+          this.trackPaymentMethodSelection("transfer");
           break;
       }
     },
@@ -1741,6 +1832,8 @@ export default {
 
       if (this.radioGroupTransfer === 0) {
         this.showSelectDelivery = true;
+        this.payments_type = "bank_transfer";
+        this.default_installments = "";
         this.totalPrice();
       }
     },
@@ -1753,6 +1846,23 @@ export default {
         }
 
         this.loadingCheckout = true;
+
+        const trackingContext = this.buildCheckoutTrackingContext({
+          items:
+            cart?.shopping_cart_items ||
+            this.productCartState?.shopping_cart_items ||
+            []
+        });
+        if (trackingContext.value !== null) {
+          trackStandard("InitiateCheckout", {
+            value: trackingContext.value,
+            num_items: trackingContext.numItems,
+            content_ids: trackingContext.contentIds,
+            content_type: "product",
+            contents: trackingContext.contents,
+            payment_method: "bank_transfer"
+          });
+        }
 
         const id = this.idAddress?.id || null;
         const request = {

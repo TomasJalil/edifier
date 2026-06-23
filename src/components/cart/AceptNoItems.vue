@@ -107,6 +107,7 @@
 
 <script>
 import { buildMercadoPagoReturnConfig } from "../../utils/checkout";
+import { cleanPrice, trackStandard } from "../../utils/metaPixel";
 
 export default {
   props: {
@@ -157,6 +158,46 @@ export default {
   },
 
   methods: {
+    trackAdjustedCheckoutStart() {
+      const items =
+        this.$store.getters["cart/CART_PRODUCTS"]?.shopping_cart_items || [];
+      if (!items.length) return;
+      const paymentType = this.data?.payment_type || "card";
+
+      const contents = items
+        .map(item => {
+          const publicationId = item.publication_id || item.publication?.id;
+          if (!publicationId) return null;
+          const price = item.publication?.price || {};
+          const itemPrice =
+            paymentType === "installments"
+              ? cleanPrice(price.pvp_18_installments ?? price.pvp)
+              : paymentType === "bank_transfer"
+                ? cleanPrice(price.pvp_transfer ?? price.pvp)
+                : cleanPrice(price.pvp);
+          return {
+            id: String(publicationId),
+            quantity: Number(item.original_quantity) || 0,
+            item_price: itemPrice || 0
+          };
+        })
+        .filter(Boolean);
+      const value = contents.reduce(
+        (acc, item) => acc + item.item_price * item.quantity,
+        0
+      );
+
+      if (!value) return;
+
+      trackStandard("InitiateCheckout", {
+        value,
+        num_items: contents.reduce((acc, item) => acc + item.quantity, 0),
+        content_ids: contents.map(item => item.id),
+        content_type: "product",
+        contents
+      });
+    },
+
     close() {
       this.$emit("dialog:change", false);
     },
@@ -234,6 +275,12 @@ export default {
     async HandlerCheckout(shopping_cart_id) {
       try {
         this.loadingCart = true;
+        try {
+          await this.$store.dispatch("cart/GET_CURRENT_CART");
+        } catch (error) {
+          console.log("No se pudo refrescar el carrito antes del tracking", error);
+        }
+        this.trackAdjustedCheckoutStart();
         const { notificationUrl, autoReturn, backUrls } =
           buildMercadoPagoReturnConfig();
         const request = {
