@@ -451,6 +451,7 @@
                                 <span class="grey--text text--darken-1 text-caption">Envío</span>
                                 <span class="font-weight-medium black--text text-caption" style="text-align: right; max-width: 60%;">
                                     <span v-if="quote > 0">${{ quote | currency }}</span>
+                                    <span v-else-if="hasFreeShippingQuote" class="green--text text--darken-1 font-weight-medium">Gratis</span>
                                     <span v-else-if="loadingCheckout" class="grey--text">Calculando opciones...</span>
                                     <span v-else class="grey--text">Calculado en el checkout</span>
                                 </span>
@@ -541,6 +542,7 @@
                       <div class="d-flex justify-space-between mb-1" v-if="radioGroup === 1">
                         <span class="text-caption grey--text">Costo de envío</span>
                         <span class="text-caption font-weight-medium" v-if="quote > 0">${{ quote | currency }}</span>
+                        <span class="text-caption font-weight-medium green--text text--darken-1" v-else-if="hasFreeShippingQuote">Gratis</span>
                         <span class="text-caption grey--text" v-else>Calculado en el checkout</span>
                       </div>
 
@@ -582,7 +584,7 @@
                       </v-btn>
                       <v-btn
                         :loading="loadingCheckout"
-                        :disabled="radioGroup === 1 && quote === 0"
+                        :disabled="isCheckoutProceedDisabled"
                         color="#00A0E9"
                         class="white--text px-6 shadow-blue"
                         rounded
@@ -907,6 +909,15 @@ export default {
       return this.radioGroup === 1 && (!this.userAddress || this.userAddress.length === 0);
     },
 
+    hasFreeShippingQuote() {
+      return (
+        this.radioGroup === 1 &&
+        this.statusQuote &&
+        !this.errorGetQuoute &&
+        Number(this.quote) === 0
+      );
+    },
+
     isDeliveryNextDisabled() {
       if (this.radioGroup == null) {
         return true;
@@ -917,6 +928,18 @@ export default {
       }
 
       if (this.showInlineAddressForm) {
+        return false;
+      }
+
+      if (!this.idAddress) {
+        return true;
+      }
+
+      return (!this.freeShipping && !this.statusQuote) || this.errorGetQuoute;
+    },
+
+    isCheckoutProceedDisabled() {
+      if (this.radioGroup !== 1) {
         return false;
       }
 
