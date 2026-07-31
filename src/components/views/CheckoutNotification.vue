@@ -93,6 +93,10 @@ export default {
       try {
         const query = this.$route.query || {};
         const meta = (answerData && answerData.meta_pixel) || {};
+        // Fallback source: the /answer endpoint always returns the MP
+        // transaction with its order (`data.order`), even on backends that
+        // don't emit the meta_pixel block yet.
+        const order = (answerData && answerData.data && answerData.data.order) || {};
 
         const collectionStatus =
           meta.collection_status || query.collection_status || query.status;
@@ -101,10 +105,12 @@ export default {
         const paymentId = meta.payment_id || query.payment_id;
         if (!paymentId) return;
 
-        const storeId = meta.store_id;
+        const storeId = meta.store_id != null ? meta.store_id : order.store_id;
         if (storeId != null && Number(storeId) !== EDIFIER_STORE_ID) return;
 
-        const value = cleanPrice(meta.total_amount);
+        const value = cleanPrice(
+          meta.total_amount != null ? meta.total_amount : order.total_amount
+        );
         if (!value) return;
 
         const externalReference =
