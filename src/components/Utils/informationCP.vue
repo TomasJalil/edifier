@@ -2,7 +2,7 @@
   <div>
     <div class="mb-5">
       <v-btn
-        v-if="!inStock() || !validateUmbral()"
+        v-if="!canPurchase()"
         @click.stop="HandlerModalAvisame()"
         class="mt-0 white--text"
         rounded
@@ -11,7 +11,7 @@
         AVISAME
       </v-btn>
       <div
-  v-else-if="showActions && $route.name !== 'cart' && inStock()"
+  v-else-if="showActions && $route.name !== 'cart'"
   class="d-flex flex-column align-center action-wrapper"
 >
   <v-btn
@@ -108,6 +108,7 @@
 <script>
 import moment from "moment";
 import { isValidUmbral } from "@/utils/validateUmbral.js";
+import { canPurchasePublication } from "@/utils/purchaseState";
 import { cleanPrice, trackStandard } from "@/utils/metaPixel";
 import { pushEcommerce, buildItem, CURRENCY } from "@/utils/googleAnalytics";
 
@@ -411,8 +412,13 @@ export default {
       );
     },
 
+    canPurchase() {
+      if (!this.inStock()) return false;
+      return canPurchasePublication(this.dataProduct, this.validateUmbral());
+    },
+
     async handleAddToCart(publication = this.dataProduct, goToCart = false) {
-      if (!this.inStock()) return;
+      if (!this.canPurchase()) return;
       try {
         const cartState = this.productCartState;
 
@@ -477,6 +483,7 @@ export default {
     },
 
     async handleBuyNow(publication = this.dataProduct) {
+      if (!this.canPurchase()) return;
       await this.handleAddToCart(publication, true);
     }
   }

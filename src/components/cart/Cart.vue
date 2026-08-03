@@ -338,14 +338,14 @@
                   </div>
 
                   <v-card-text class="px-4 py-2">
-                    <v-radio-group v-model="radioGroup" @change="HandlerShippingQuote()" class="mt-0" hide-details>
+                    <v-radio-group v-model="radioGroup" class="mt-0" hide-details>
                         <v-row dense class="mb-3">
                             <v-col cols="12" sm="6" class="pa-1">
                                 <v-card
                                   outlined
                                   class="delivery-option-card pa-3 cursor-pointer transition-swing d-flex align-center"
                                   :class="{'selected-delivery-card': radioGroup === 0}"
-                                  @click="radioGroup = 0; HandlerShippingQuote()"
+                                  @click="selectDeliveryMethod(0)"
                                   ripple
                                 >
                                     <div class="mr-3 rounded-circle blue lighten-5 pa-2 d-flex">
@@ -355,7 +355,7 @@
                                         <div class="font-weight-bold text-body-2 black--text">Retiro en tienda</div>
                                         <div class="caption grey--text" style="line-height: 1;">Gratis</div>
                                     </div>
-                                    <v-radio :value="0" color="#00A0E9" class="ma-0"></v-radio>
+                                    <v-radio :value="0" color="#00A0E9" class="ma-0" @click.stop="selectDeliveryMethod(0)"></v-radio>
                                 </v-card>
                             </v-col>
                             <v-col cols="12" sm="6" class="pa-1">
@@ -363,7 +363,7 @@
                                   outlined 
                                   class="delivery-option-card pa-3 cursor-pointer transition-swing d-flex align-center"
                                   :class="{'selected-delivery-card': radioGroup === 1}"
-                                  @click="radioGroup = 1; HandlerShippingQuote()"
+                                  @click="selectDeliveryMethod(1)"
                                   ripple
                                 >
                                     <div class="mr-3 rounded-circle blue lighten-5 pa-2 d-flex">
@@ -373,7 +373,7 @@
                                         <div class="font-weight-bold text-body-2 black--text">Envío a domicilio</div>
                                         <div class="caption grey--text" style="line-height: 1;">Calculado en el checkout</div>
                                     </div>
-                                    <v-radio :value="1" color="#00A0E9" class="ma-0"></v-radio>
+                                    <v-radio :value="1" color="#00A0E9" class="ma-0" @click.stop="selectDeliveryMethod(1)"></v-radio>
                                 </v-card>
                             </v-col>
                         </v-row>
@@ -450,9 +450,9 @@
                             <div class="d-flex justify-space-between mb-1" v-if="radioGroup === 1">
                                 <span class="grey--text text--darken-1 text-caption">Envío</span>
                                 <span class="font-weight-medium black--text text-caption" style="text-align: right; max-width: 60%;">
-                                    <span v-if="quote > 0">${{ quote | currency }}</span>
-                                    <span v-else-if="hasFreeShippingQuote" class="green--text text--darken-1 font-weight-medium">Gratis</span>
-                                    <span v-else-if="loadingCheckout" class="grey--text">Calculando opciones...</span>
+                                    <span v-if="shippingQuoteState === 'price'">${{ quote | currency }}</span>
+                                    <span v-else-if="shippingQuoteState === 'free'" class="green--text text--darken-1 font-weight-medium">Gratis</span>
+                                    <span v-else-if="shippingQuoteState === 'calculating'" class="grey--text">Calculando</span>
                                     <span v-else class="grey--text">Calculado en el checkout</span>
                                 </span>
                             </div>
@@ -541,8 +541,9 @@
                       <!-- Costo de envío -->
                       <div class="d-flex justify-space-between mb-1" v-if="radioGroup === 1">
                         <span class="text-caption grey--text">Costo de envío</span>
-                        <span class="text-caption font-weight-medium" v-if="quote > 0">${{ quote | currency }}</span>
-                        <span class="text-caption font-weight-medium green--text text--darken-1" v-else-if="hasFreeShippingQuote">Gratis</span>
+                        <span class="text-caption font-weight-medium" v-if="shippingQuoteState === 'price'">${{ quote | currency }}</span>
+                        <span class="text-caption font-weight-medium green--text text--darken-1" v-else-if="shippingQuoteState === 'free'">Gratis</span>
+                        <span class="text-caption grey--text" v-else-if="shippingQuoteState === 'calculating'">Calculando</span>
                         <span class="text-caption grey--text" v-else>Calculado en el checkout</span>
                       </div>
 
@@ -696,6 +697,7 @@ import {
   CURRENCY
 } from "../../utils/googleAnalytics";
 import { getStoredClickIds } from "../../utils/googleAdsAttribution";
+import { getShippingQuoteState } from "../../utils/purchaseState";
 
 export default {
   components: {
@@ -730,6 +732,7 @@ export default {
       idAddress: null,
       loadingAcceptItem: false,
       loadingCheckout: false,
+      loadingShippingQuote: false,
       showSelectDelivery: false,
       showAddressChange: false,
       depositElements: {
@@ -909,13 +912,14 @@ export default {
       return this.radioGroup === 1 && (!this.userAddress || this.userAddress.length === 0);
     },
 
-    hasFreeShippingQuote() {
-      return (
-        this.radioGroup === 1 &&
-        this.statusQuote &&
-        !this.errorGetQuoute &&
-        Number(this.quote) === 0
-      );
+    shippingQuoteState() {
+      return getShippingQuoteState({
+        deliveryMethod: this.radioGroup,
+        loading: this.loadingShippingQuote,
+        resolved: this.statusQuote,
+        quote: this.quote,
+        error: this.errorGetQuoute
+      });
     },
 
     isDeliveryNextDisabled() {
@@ -1288,23 +1292,45 @@ export default {
       }
     },
 
+    selectDeliveryMethod(method) {
+      this.radioGroup = method;
+      this.quote = 0;
+      this.statusQuote = false;
+      this.errorGetQuoute = false;
+
+      if (method === 0) {
+        this.loadingCheckout = false;
+        this.loadingShippingQuote = false;
+        this.ValidateProductWarehouse();
+        return;
+      }
+
+      this.loadingCheckout = true;
+      this.loadingShippingQuote = true;
+      this.HandlerShippingQuote();
+    },
+
     async HandlerShippingQuote() {
+      this.errorGetQuoute = false;
+      this.statusQuote = false;
+
+      if (this.radioGroup !== 1) {
+        this.loadingCheckout = false;
+        this.loadingShippingQuote = false;
+        return;
+      }
+
+      if (!this.freeShipping && !this.idAddress) {
+        this.loadingCheckout = false;
+        this.loadingShippingQuote = false;
+        return;
+      }
+
       try {
         let calculatedQuote = 0;
+        this.loadingCheckout = true;
+        this.loadingShippingQuote = true;
         if (!this.freeShipping) {
-          this.errorGetQuoute = false;
-          this.loadingCheckout = true;
-          this.statusQuote = false;
-
-          if (this.radioGroup == 0) {
-            return;
-          }
-
-          if (!this.idAddress) {
-            this.loadingCheckout = false;
-            return;
-          }
-
           const request = {
             address_id: this.idAddress?.id || this.idAddress
           };
@@ -1317,14 +1343,15 @@ export default {
           calculatedQuote = response.data.data;
         }
         this.quote = calculatedQuote;
+        this.statusQuote = true;
         this.total_order = this.totalAmount + this.quote;
       } catch (error) {
         if (this.userAddress.length > 0) {
           this.errorGetQuoute = true;
         }
       } finally {
-        this.statusQuote = true;
         this.loadingCheckout = false;
+        this.loadingShippingQuote = false;
       }
     },
 

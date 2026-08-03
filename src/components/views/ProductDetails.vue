@@ -114,7 +114,7 @@
               </div> -->
 
               <div
-                v-if="validateStock()"
+                v-if="canPurchase()"
                 class="d-flex align-center justify-start py-1"
               >
                 <span class="mx-0 text-uppercase" style="font-weight: 500">
@@ -150,7 +150,7 @@
               <div
                 class="d-md-flex justify-space-between mt-5"
                 style="width: 80%"
-                v-if="validateStock()"
+                v-if="canPurchase()"
               >
                 <div class="d-flex flex-column flex-sm-row flex-grow-1">
                   <v-btn
@@ -333,6 +333,7 @@ import informationCP from "@/components/Utils/informationCP";
 import ImageBackground from "./utils/ImageBackground";
 import ProductDetailsPrices from "./utils/products/ProductDetailsPrices";
 import { isValidUmbral } from "@/utils/validateUmbral.js";
+import { canPurchasePublication } from "@/utils/purchaseState";
 import AvailabilityList from "./utils/products/AvailabilityList.vue";
 import { cleanPrice, trackStandard, trackCustom } from "@/utils/metaPixel";
 import {
@@ -604,6 +605,8 @@ export default {
     },
 
     async HandlerAddCart() {
+      if (!this.canPurchase()) return;
+
       try {
         const cart = this.productCartState;
         
@@ -689,6 +692,8 @@ export default {
     },
 
     async HandlerBuy() {
+      if (!this.canPurchase()) return;
+
       try {
         // Si no está autenticado, agregar al carrito y redirigir al carrito
         if (!this.isAuth) {
@@ -751,6 +756,11 @@ export default {
         !this.dataProduct.store.out_stock &&
         !this.dataProduct.out_stock
       );
+    },
+
+    canPurchase() {
+      if (!this.validateStock()) return false;
+      return canPurchasePublication(this.dataProduct, this.validateUmbral());
     },
 
     validateUmbral() {
